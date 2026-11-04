@@ -1,10 +1,11 @@
 import { NavLink } from "react-router"
 import { links } from "../data/Arrays"
+import styles from "./Navbar.module.css"
 
 export default function Navbar() {
     return(
-            <nav>
-                <NavLink to="/" end>
+            <nav className={styles.navbar}>
+                <NavLink to="/" end className={styles.logo}>
                     Logo
                 </NavLink>
                 <ul>
