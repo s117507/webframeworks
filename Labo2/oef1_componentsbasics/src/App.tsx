@@ -27,17 +27,19 @@ const Header = ({title, subtitle} : HeaderProps ) => {
   )
 }
 
-const List = ({items} : ItemProps) => {
+const ListItem = ({text}: ListItemProps) => {
   return (
-    <>
-      <ul>
-        {
-          items.map((item) => (
-            <li key={item}>{item}</li>
-          ))
-        }
-      </ul>
-    </>
+    <li>{text} </li>
+  )
+}
+
+const List = ({ items }: ItemProps) => {
+  return (
+    <ul>
+      {items.map((item) => (
+        <ListItem key={item} text={item} />
+      ))}
+    </ul>
   )
 }
 
