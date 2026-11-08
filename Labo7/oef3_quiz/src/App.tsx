@@ -1,5 +1,6 @@
-import React, {useState, useEffect} from "react";
-import { ColorRing } from  'react-loader-spinner'
+import { useState, useEffect, useMemo } from "react";
+import { ColorRing } from 'react-loader-spinner'
+import { decode } from 'html-entities';
 
 export interface Questions {
     response_code: number;
@@ -11,73 +12,95 @@ export interface Question {
     question:          string;
     correct_answer:    string;
     incorrect_answers: string[];
-    user_answer?: string;
-
+    user_answer?:      string;
 }
 
 
 interface TrueOrFalseQuestionProps {
-    question: Question,
-    userAnswer: string,
+    userAnswer: string | undefined,
     setUserAnswer: (answer: string) => void
 }
 
-const TrueOrFalseQuestion = ({question,userAnswer, setUserAnswer} : TrueOrFalseQuestionProps) => {
+// `question` is no longer destructured — this component doesn't need it.
+// Removing the unused parameter clears the tsc warning.
+const TrueOrFalseQuestion = ({userAnswer, setUserAnswer}: TrueOrFalseQuestionProps) => {
     return (
         <div>
-            <input type="radio" checked={userAnswer == "True"} onChange={(event) => setUserAnswer("True")} /> True
-            <input type="radio" checked={userAnswer == "False"} onChange={(event) => setUserAnswer("False")} /> False
+            {/* `event` dropped from the onChange arrow — we don't use it, and leaving it
+                triggered an unused-variable warning. */}
+            <input type="radio" checked={userAnswer === "True"}  onChange={() => setUserAnswer("True")}  /> True
+            <input type="radio" checked={userAnswer === "False"} onChange={() => setUserAnswer("False")} /> False
         </div>
     );
 }
 
 interface QuestionProps {
     question: Question,
-    userAnswer: string,
+    userAnswer: string | undefined,
     setUserAnswer: (answer: string) => void
 }
 
-const Question = ({question, setUserAnswer, userAnswer} : QuestionProps) => {
+const QuestionCard = ({question, setUserAnswer, userAnswer}: QuestionProps) => {
+    // Derived style: the background depends on whether the answer is right.
+    // Not stored as state — it's computed every render from userAnswer + correct_answer.
     let color = "white";
     if (userAnswer !== undefined) {
-        if (userAnswer == question.correct_answer) {
-            color = "lightgreen";
-        } else {
-            color = "red";
-        }
+        color = userAnswer === question.correct_answer ? "lightgreen" : "red";
     }
+
     return (
-        <div style={{backgroundColor: color}}>
+        <div style={{backgroundColor: color, padding: "0.5rem", marginBottom: "0.5rem"}}>
             <div>{decode(question.question)}</div>
-            {userAnswer === undefined ? (<div>
-                {question.type === "boolean" && <TrueOrFalseQuestion question={question} setUserAnswer={setUserAnswer} userAnswer={userAnswer}/>}
-                {question.type === "multiple" && <MultipleChoiceQuestion question={question} setUserAnswer={setUserAnswer} userAnswer={userAnswer}  />}
-            </div>) : (
-                <div style={{fontWeight: "bold"}}>
-                    {(userAnswer !== question.correct_answer) ? <p>You answered {userAnswer} and the correct answer was {question.correct_answer}</p> : <p>You answered {userAnswer} which is the correct answer</p>}
+            {userAnswer === undefined ? (
+                <div>
+                    {question.type === "boolean" && (
+                        <TrueOrFalseQuestion
+                            userAnswer={userAnswer}
+                            setUserAnswer={setUserAnswer}
+                        />
+                    )}
+                    {question.type === "multiple" && (
+                        <MultipleChoiceQuestion
+                            question={question}
+                            userAnswer={userAnswer}
+                            setUserAnswer={setUserAnswer}
+                        />
+                    )}
                 </div>
-            )
-            }
+            ) : (
+                <div style={{fontWeight: "bold"}}>
+                    {userAnswer !== question.correct_answer
+                        ? <p>You answered {userAnswer} and the correct answer was {question.correct_answer}</p>
+                        : <p>You answered {userAnswer} which is the correct answer</p>}
+                </div>
+            )}
         </div>
     )
 }
 
 interface MultipleChoiceQuestionProps {
     question: Question,
-    userAnswer: string,
+    userAnswer: string | undefined,
     setUserAnswer: (answer: string) => void
 }
 
-const MultipleChoiceQuestion = ({question, setUserAnswer} : MultipleChoiceQuestionProps) => {
-    let allQuestions = [question.correct_answer, ...question.incorrect_answers];
-    allQuestions.sort(() => Math.random() - 0.5);
+const MultipleChoiceQuestion = ({question, setUserAnswer}: MultipleChoiceQuestionProps) => {
+    // useMemo: shuffle the answers ONCE per question. Without this, every render
+    // re-shuffles and the options jump around whenever the user interacts.
+    // The dependency array ties the shuffle to the correct_answer, so a new
+    // question gets a new shuffle but the same question stays stable.
+    const allAnswers = useMemo(() => {
+        const list = [question.correct_answer, ...question.incorrect_answers];
+        return [...list].sort(() => Math.random() - 0.5);
+    }, [question.correct_answer]);
+
     return (
-            <select onChange={(event) => setUserAnswer(event.target.value)}> 
-                <option value="">Select an answer</option>
-                {allQuestions.map((answer, index) => (
-                    <option key={index} value={answer}>{decode(answer)}</option>
-                ))}
-            </select>
+        <select onChange={(e) => setUserAnswer(e.target.value)}>
+            <option value="">Select an answer</option>
+            {allAnswers.map((answer, index) => (
+                <option key={index} value={answer}>{decode(answer)}</option>
+            ))}
+        </select>
     );
 }
 
@@ -91,50 +114,57 @@ const LoadingIndicator = () => {
             wrapperStyle={{}}
             wrapperClass="blocks-wrapper"
             colors={['#e15b64', '#f47e60', '#f8b26a', '#abbd81', '#849b87']}
-            />
+        />
     )
 }
 
 const QuizApp = () => {
     const [questions, setQuestions] = useState<Question[]>([]);
-
     const [loading, setLoading] = useState(false);
 
-    const loadQuestions = async() => {
+    // Functional updater (prev => ...) avoids the stale-closure bug where
+    // two quick clicks on "Load More" would both see the old `questions`.
+    const loadQuestions = async () => {
         setLoading(true);
-        let response = await fetch("https://opentdb.com/api.php?amount=10")
-        let questionsResponse: Questions = await response.json();
-        setQuestions([...questions, ...questionsResponse.results]);
+        const response = await fetch("https://opentdb.com/api.php?amount=10");
+        const data: Questions = await response.json();
+        setQuestions(prev => [...prev, ...data.results]);
         setLoading(false);
     }
 
     useEffect(() => {
         loadQuestions();
-    },[])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     return (
         <>
-            {questions.map((question, index) => {
-                return <Question question={question} userAnswer={question.user_answer} setUserAnswer={(answer) => {
-                    let newQuestions = [...questions];
-                    newQuestions[index].user_answer = answer;
-                    setQuestions(newQuestions);
-                }} />
-            })}
+            {questions.map((question, index) => (
+                // key is required on the outermost element of a .map().
+                // Index is fine here because the list only grows at the end.
+                <QuestionCard
+                    key={index}
+                    question={question}
+                    userAnswer={question.user_answer}
+                    setUserAnswer={(answer) => {
+                        // Immutable update: new outer array AND a new question object
+                        // for the one we're changing. React compares by reference.
+                        setQuestions(prev =>
+                            prev.map((q, i) => i === index ? {...q, user_answer: answer} : q)
+                        );
+                    }}
+                />
+            ))}
             <button onClick={loadQuestions}>Load More</button>
             {loading && <div><LoadingIndicator /></div>}
-
-
         </>
     )
 }
 
-
 const App = () => {
-
     return (
         <>
-           <QuizApp/>
+            <QuizApp />
         </>
     )
 }
